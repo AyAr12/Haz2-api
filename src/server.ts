@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import type { Request, Response } from "express";
 // import { config } from "dotenv";
 
 // config();
@@ -133,7 +134,7 @@ function createTimeoutHandler(gameId: string) {
 }
 
 // Health check endpoint
-app.get("/health", (_, res) => {
+app.get("/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
     activeGames: gameService.getActiveGamesCount(),
@@ -141,9 +142,9 @@ app.get("/health", (_, res) => {
   });
 });
 
-app.get("/api/avatars", (_, res) => res.json({ avatars: AVATARS }));
+app.get("/api/avatars", (_req: Request, res: Response) => res.json({ avatars: AVATARS }));
 
-app.get("/api/leaderboard", async (_, res) => {
+app.get("/api/leaderboard", async (_req: Request, res: Response) => {
   try {
     const leaderboard = await userService.getLeaderboard(20);
     res.json({ leaderboard });
@@ -152,7 +153,7 @@ app.get("/api/leaderboard", async (_, res) => {
   }
 });
 
-app.get("/api/profile/:visitorId", async (req, res) => {
+app.get("/api/profile/:visitorId", async (req: Request, res: Response) => {
   try {
     const user = await userService.getUserByVisitorId(req.params.visitorId);
     if (!user) return res.status(404).json({ error: "Utilisateur non trouvé" });
@@ -162,7 +163,7 @@ app.get("/api/profile/:visitorId", async (req, res) => {
   }
 });
 
-app.get("/api/room/:code", async (req, res) => {
+app.get("/api/room/:code", async (req: Request, res: Response) => {
   try {
     const room = await privateRoomService.getRoom(req.params.code);
     if (!room) return res.status(404).json({ error: "Room introuvable" });
@@ -177,135 +178,6 @@ app.get("/api/room/:code", async (req, res) => {
     return res.status(500).json({ error: "Erreur serveur" });
   }
 });
-
-// // Socket.IO
-// io.on("connection", (socket) => {
-//   console.log(`Client connecté: ${socket.id}`);
-
-//   // Matchmaking
-//   socket.on("findMatch", (data: { playerId: string }) => {
-//     console.log(`${data.playerId} cherche un match`);
-//     gameService.registerSocket(socket.id, data.playerId);
-//     matchmaking.addToQueue(data.playerId, socket.id);
-
-//     socket.emit("queueJoined", {
-//       message: "Recherche d'un adversaire...",
-//       queueSize: matchmaking.getQueueSize(),
-//     });
-//   });
-
-//   // Cancel matchmaking
-//   socket.on("cancelSearch", (data: { playerId: string }) => {
-//     matchmaking.removeFromQueue(data.playerId);
-//     socket.emit("searchCancelled", { message: "Recherche annulée" });
-//   });
-
-//   // Play card
-//   socket.on(
-//     "playCard",
-//     (data: {
-//       gameId: string;
-//       playerId: string;
-//       cardId: string;
-//       newType?: CardType;
-//     }) => {
-//       const handler = createTimeoutHandler(data.gameId);
-//       const result = gameService.playCard(
-//         data.gameId,
-//         data.playerId,
-//         data.cardId,
-//         data.newType,
-//         handler
-//       );
-
-//       if (result.success && result.game) {
-//         broadcastGameState(data.gameId, result.game);
-//         checkRoundOrMatchOver(data.gameId, result.game);
-//       } else {
-//         socket.emit("error", { message: result.message });
-//       }
-//     }
-//   );
-
-//   // Décision de contre (nouveau)
-//   socket.on(
-//     "counterDecision",
-//     (data: {
-//       gameId: string;
-//       playerId: string;
-//       willCounter: boolean;
-//       cardId?: string;
-//     }) => {
-//       const handler = createTimeoutHandler(data.gameId);
-
-//       const result = gameService.handleCounterDecision(
-//         data.gameId,
-//         data.playerId,
-//         data.willCounter,
-//         data.cardId,
-//         handler
-//       );
-
-//       if (result.success && result.game) {
-//         broadcastGameState(data.gameId, result.game);
-//         checkRoundOrMatchOver(data.gameId, result.game);
-//       } else {
-//         socket.emit("error", { message: result.message });
-//       }
-//     }
-//   );
-
-//   // Piocher une carte
-//   socket.on("drawCard", (data: { gameId: string; playerId: string }) => {
-//     const handler = createTimeoutHandler(data.gameId);
-//     const result = gameService.drawCard(data.gameId, data.playerId, handler);
-
-//     if (result.success && result.game) {
-//       // Envoyer l'état mis à jour aux deux joueurs
-//       broadcastGameState(data.gameId, result.game);
-//     } else {
-//       socket.emit("error", { message: result.message });
-//     }
-//   });
-
-//   // Déconnexion
-//   socket.on("disconnect", () => {
-//     console.log(`Client déconnecté: ${socket.id}`);
-//     // Retirer de la queue de matchmaking
-//     const playerId = gameService.getPlayerIdBySocket(socket.id);
-//     if (playerId) {
-//       matchmaking.removeFromQueue(playerId);
-//     }
-
-//     // Gérer la partie en cours
-//     const disconnectResult = gameService.handlePlayerDisconnect(socket.id);
-//     if (disconnectResult) {
-//       const { opponentSocketId, game, gameId, disconnectedPlayerId } =
-//         disconnectResult;
-
-//       io.to(opponentSocketId).emit("opponentDisconnected", {
-//         message: "Votre adversaire s'est déconnecté",
-//       });
-
-//       const opponentIdx = game.players[0].id === disconnectedPlayerId ? 1 : 0;
-//       io.to(opponentSocketId).emit("matchOver", {
-//         matchWinner: game.matchWinner,
-//         isWinner: true,
-//         finalScore: game.scores,
-//         yourScore: game.scores[opponentIdx],
-//         opponentScore: game.scores[opponentIdx === 0 ? 1 : 0],
-//         reason: "opponent_disconnected",
-//       });
-
-//       console.log(
-//         `Joueur ${disconnectedPlayerId} déconnecté, match ${gameId} abandonné`
-//       );
-//       setTimeout(() => gameService.removeGame(gameId), 5000);
-//     }
-
-//     gameService.unregisterSocket(socket.id);
-//   });
-// });
 
 // ─── Socket.IO ──────────────────────────────────────────────────────
 
