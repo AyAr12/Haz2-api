@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeu de Cartes - Client Test</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 1200px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 30px;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .info-item {
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .status.waiting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.playing {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button.primary {
+            background: #667eea;
+            color: white;
+        }
+
+        button.primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button.secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .last-card {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .card {
+            display: inline-block;
+            width: 120px;
+            height: 180px;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .card:hover:not(.disabled) {
+            transform: translateY(-10px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+
+        .card.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .card.monnaie { background: linear-gradient(135deg, #f7dc6f 0%, #f39c12 100%); }
+        .card.épée { background: linear-gradient(135deg, #85c1e2 0%, #3498db 100%); }
+        .card.plat { background: linear-gradient(135deg, #82e0aa 0%, #27ae60 100%); }
+        .card.bâton { background: linear-gradient(135deg, #f1948a 0%, #e74c3c 100%); }
+
+        .card-number {
+            font-size: 36px;
+            font-weight: bold;
+            text-align: center;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            margin-top: 40px;
+        }
+
+        .card-type {
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .hand {
+            margin-top: 30px;
+        }
+
+        .hand h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .cards-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .type-selector {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+
+        .type-selector.show {
+            display: block;
+        }
+
+        .type-selector h3 {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .type-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+
+        .overlay.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎴 Jeu de Cartes Multijoueur</h1>
+        
+        <div class="game-info">
+            <div class="info-item">
+                <div class="info-label">Votre ID</div>
+                <div class="info-value" id="playerId">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Adversaire</div>
+                <div class="info-value" id="opponentCardCount">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Pioche</div>
+                <div class="info-value" id="deckCount">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Défausse</div>
+                <div class="info-value" id="discardCount">-</div>
+            </div>
+        </div>
+
+        <div id="status" class="status waiting">En attente...</div>
+
+        <div class="controls">
+            <button id="findMatchBtn" class="primary">Trouver un adversaire</button>
+            <button id="cancelSearchBtn" class="secondary" style="display: none;">Annuler</button>
+            <button id="drawCardBtn" class="secondary" style="display: none;">Piocher</button>
+        </div>
+
+        <div class="last-card" id="lastCardContainer" style="display: none;">
+            <h3>Dernière carte jouée (Type actif: <span id="currentType">-</span>)</h3>
+            <div id="lastCard"></div>
+        </div>
+
+        <div class="hand" id="handContainer" style="display: none;">
+            <h3>Votre main</h3>
+            <div class="cards-container" id="yourHand"></div>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay"></div>
+    <div class="type-selector" id="typeSelector">
+        <h3>Choisissez le nouveau type</h3>
+        <div class="type-buttons">
+            <button class="primary" onclick="selectType('monnaie')">💰 Monnaie</button>
+            <button class="primary" onclick="selectType('épée')">⚔️ Épée</button>
+            <button class="primary" onclick="selectType('plat')">🍽️ Plat</button>
+            <button class="primary" onclick="selectType('bâton')">🪄 Bâton</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io('http://localhost:3000');
+        const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+        let currentGameId = null;
+        let currentGameState = null;
+        let selectedCard = null;
+
+        document.getElementById('playerId').textContent = playerId.substr(0, 10) + '...';
+
+        // Événements Socket.IO
+        socket.on('connect', () => {
+            console.log('Connecté au serveur');
+            updateStatus('Connecté au serveur', 'playing');
+        });
+
+        socket.on('queueJoined', (data) => {
+            updateStatus(data.message, 'waiting');
+            document.getElementById('findMatchBtn').style.display = 'none';
+            document.getElementById('cancelSearchBtn').style.display = 'block';
+        });
+
+        socket.on('matchFound', (data) => {
+            console.log('Match trouvé!', data);
+            currentGameId = data.gameId;
+            currentGameState = data.gameState;
+            updateStatus('Match trouvé! La partie commence...', 'playing');
+            document.getElementById('cancelSearchBtn').style.display = 'none';
+            document.getElementById('drawCardBtn').style.display = 'block';
+            updateGameUI();
+        });
+
+        socket.on('gameUpdate', (state) => {
+            console.log('Mise à jour du jeu', state);
+            currentGameState = state;
+            updateGameUI();
+        });
+
+        socket.on('gameOver', (data) => {
+            if (data.isWinner) {
+                updateStatus('🎉 Vous avez gagné!', 'playing');
+            } else {
+                updateStatus('😞 Vous avez perdu', 'error');
+            }
+            document.getElementById('drawCardBtn').style.display = 'none';
+            document.getElementById('findMatchBtn').style.display = 'block';
+        });
+
+        socket.on('error', (data) => {
+            updateStatus('❌ ' + data.message, 'error');
+            setTimeout(() => {
+                if (currentGameState) {
+                    updateStatus(currentGameState.isYourTurn ? 'À votre tour!' : 'Tour de l\'adversaire', 'playing');
+                }
+            }, 2000);
+        });
+
+        // Boutons
+        document.getElementById('findMatchBtn').addEventListener('click', () => {
+            socket.emit('findMatch', { playerId });
+        });
+
+        document.getElementById('cancelSearchBtn').addEventListener('click', () => {
+            socket.emit('cancelSearch', { playerId });
+            updateStatus('Recherche annulée', 'waiting');
+            document.getElementById('cancelSearchBtn').style.display = 'none';
+            document.getElementById('findMatchBtn').style.display = 'block';
+        });
+
+        document.getElementById('drawCardBtn').addEventListener('click', () => {
+            if (currentGameId && currentGameState.isYourTurn) {
+                socket.emit('drawCard', { gameId: currentGameId, playerId });
+            }
+        });
+
+        // Fonctions UI
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+
+        function updateGameUI() {
+            if (!currentGameState) return;
+
+            // Afficher les infos
+            document.getElementById('opponentCardCount').textContent = currentGameState.opponentCardCount + ' cartes';
+            document.getElementById('deckCount').textContent = currentGameState.deckCount;
+            document.getElementById('discardCount').textContent = currentGameState.discardPileCount;
+            document.getElementById('currentType').textContent = getTypeEmoji(currentGameState.currentType);
+
+            // Afficher la dernière carte
+            const lastCardContainer = document.getElementById('lastCardContainer');
+            lastCardContainer.style.display = 'block';
+            document.getElementById('lastCard').innerHTML = createCardHTML(currentGameState.lastCard, false);
+
+            // Afficher la main
+            const handContainer = document.getElementById('handContainer');
+            handContainer.style.display = 'block';
+            const yourHandEl = document.getElementById('yourHand');
+            yourHandEl.innerHTML = '';
+            currentGameState.yourHand.forEach(card => {
+                const canPlay = currentGameState.isYourTurn && canPlayCard(card);
+                yourHandEl.innerHTML += createCardHTML(card, canPlay);
+            });
+
+            // Mettre à jour le statut
+            if (currentGameState.pendingEffect) {
+                const effect = currentGameState.pendingEffect;
+                if (effect.type === 'draw2') {
+                    updateStatus(`⚠️ Piochez ${effect.drawCount} cartes ou contrez avec un 2!`, 'error');
+                } else if (effect.type === 'block') {
+                    updateStatus('⛔ Vous êtes bloqué! Contrez avec un 1 ou passez', 'error');
+                }
+            } else if (currentGameState.isYourTurn) {
+                updateStatus('✨ À votre tour!', 'playing');
+            } else {
+                updateStatus('⏳ Tour de l\'adversaire...', 'waiting');
+            }
+        }
+
+        function canPlayCard(card) {
+            const lastCard = currentGameState.lastCard;
+            const pendingEffect = currentGameState.pendingEffect;
+
+            if (pendingEffect) {
+                if (pendingEffect.type === 'block' && card.number !== 1) return false;
+                if (pendingEffect.type === 'draw2' && card.number !== 2) return false;
+                if (pendingEffect.type === 'changeType' && card.number !== 7) return false;
+                return true;
+            }
+
+            return card.type === currentGameState.currentType || card.number === lastCard.number;
+        }
+
+        function createCardHTML(card, canPlay) {
+            const disabled = !canPlay ? 'disabled' : '';
+            const onclick = canPlay ? `onclick="playCard('${card.id}', ${card.number})"` : '';
+            return `
+                <div class="card ${card.type} ${disabled}" ${onclick}>
+                    <div class="card-number">${card.number}</div>
+                    <div class="card-type">${getTypeEmoji(card.type)} ${card.type}</div>
+                </div>
+            `;
+        }
+
+        function getTypeEmoji(type) {
+            const emojis = {
+                'monnaie': '💰',
+                'épée': '⚔️',
+                'plat': '🍽️',
+                'bâton': '🪄'
+            };
+            return emojis[type] || '';
+        }
+
+        function playCard(cardId, number) {
+            if (!currentGameState.isYourTurn) return;
+
+            // Si c'est un 7, demander le type
+            if (number === 7) {
+                selectedCard = cardId;
+                document.getElementById('overlay').classList.add('show');
+                document.getElementById('typeSelector').classList.add('show');
+            } else {
+                socket.emit('playCard', { gameId: currentGameId, playerId, cardId });
+            }
+        }
+
+        function selectType(type) {
+            document.getElementById('overlay').classList.remove('show');
+            document.getElementById('typeSelector').classList.remove('show');
+            socket.emit('playCard', { 
+                gameId: currentGameId, 
+                playerId, 
+                cardId: selectedCard, 
+                newType: type 
+            });
+            selectedCard = null;
+        }
+    </script>
+</body>
+</html>
