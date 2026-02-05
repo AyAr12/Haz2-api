@@ -16,8 +16,8 @@ import { PrivateRoomService } from "./services/PrivateRoomService";
 import { AVATARS } from "./models/User";
 import { connectDatabase } from "./config/database";
 
-// const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
-const allowedOrigin = "http://localhost:5173";
+const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
+// const allowedOrigin = "http://localhost:5173";
 
 const app = express();
 const httpServer = createServer(app);
