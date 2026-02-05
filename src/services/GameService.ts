@@ -43,33 +43,6 @@ export class GameService {
     return this.socketPlayerMap.get(socketId);
   }
 
-  // ─── Create match ─────────────────────────────────────────────────
-  // createMatch(
-  //   player1Id: string,
-  //   player1SocketId: string,
-  //   player2Id: string,
-  //   player2SocketId: string
-  // ): Game {
-  //   const player1 = new Player(player1Id, player1SocketId);
-  //   const player2 = new Player(player2Id, player2SocketId);
-
-  //   const game = new Game(player1, player2);
-  //   game.startMatch();
-
-  //   this.games.set(game.id, game);
-  //   this.playerGameMap.set(player1Id, game.id);
-  //   this.playerGameMap.set(player2Id, game.id);
-  //   this.registerSocket(player1SocketId, player1Id);
-  //   this.registerSocket(player2SocketId, player2Id);
-
-  //   console.log(
-  //     `Match créé: ${game.id} — ${player1Id} vs ${player2Id} (Best of ${
-  //       TARGET_SCORE * 2 - 1
-  //     })`
-  //   );
-  //   return game;
-  // }
-
   // ─── Create match (random matchmaking) ────────────────────────────
   createMatch(
     player1VisitorId: string,
@@ -119,6 +92,15 @@ export class GameService {
   getGameByPlayerId(playerId: string): Game | undefined {
     const gameId = this.playerGameMap.get(playerId);
     return gameId ? this.games.get(gameId) : undefined;
+  }
+
+  // ✅ FIX: Nouvelle méthode pour initialiser le timer de tour au début du match
+  initializeTurnTimer(gameId: string, onTimeout?: () => void): void {
+    const game = this.games.get(gameId);
+    if (!game || game.status !== GameStatus.PLAYING) return;
+
+    this.setTurnTimer(gameId, onTimeout);
+    console.log(`⏱️ Timer de tour initialisé pour le match ${gameId}`);
   }
 
   // ─── Start next round ─────────────────────────────────────────────
@@ -292,6 +274,10 @@ export class GameService {
     if (!game || game.status !== GameStatus.PLAYING) return { action: "none" };
 
     const currentPlayer = game.getCurrentPlayer();
+    console.log(
+      `⏱️ Timeout de tour pour ${currentPlayer.username} dans le match ${gameId}`
+    );
+
     const auto = game.autoPlay(currentPlayer.id);
 
     if (auto.action === "play" && auto.cardId) {
@@ -338,7 +324,7 @@ export class GameService {
   }
 
   // ─── Timer de tour (auto-play après 30s) ───────────────────────
-  private setTurnTimer(gameId: string, onTimeout?: () => void): void {
+  setTurnTimer(gameId: string, onTimeout?: () => void): void {
     this.clearTurnTimer(gameId);
     if (!onTimeout) return;
 

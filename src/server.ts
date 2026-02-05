@@ -4,9 +4,6 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import type { Request, Response } from "express";
-// import { config } from "dotenv";
-
-// config();
 
 import { GameService } from "./services/GameService";
 import {
@@ -19,7 +16,8 @@ import { PrivateRoomService } from "./services/PrivateRoomService";
 import { AVATARS } from "./models/User";
 import { connectDatabase } from "./config/database";
 
-const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
+// const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
+const allowedOrigin = "http://localhost:5173";
 
 const app = express();
 const httpServer = createServer(app);
@@ -142,7 +140,9 @@ app.get("/health", (_req: Request, res: Response) => {
   });
 });
 
-app.get("/api/avatars", (_req: Request, res: Response) => res.json({ avatars: AVATARS }));
+app.get("/api/avatars", (_req: Request, res: Response) =>
+  res.json({ avatars: AVATARS })
+);
 
 app.get("/api/leaderboard", async (_req: Request, res: Response) => {
   try {
@@ -411,6 +411,10 @@ matchmaking.on("matchFound", (player1: QueuedPlayer, player2: QueuedPlayer) => {
     player2.avatar,
     GameMode.RANDOM
   );
+  // ✅ FIX: Initialiser le timer de tour côté serveur dès le début du match
+  const handler = createTimeoutHandler(game.id);
+  gameService.initializeTurnTimer(game.id, handler);
+
   io.to(player1.socketId).emit("matchFound", {
     gameId: game.id,
     opponentId: player2.visitorId,
@@ -442,6 +446,10 @@ privateRoomService.on("roomReady", async (room) => {
       room.code
     );
     await privateRoomService.setGameId(room.code, game.id);
+
+    // ✅ FIX: Initialiser le timer de tour côté serveur dès le début du match
+    const handler = createTimeoutHandler(game.id);
+    gameService.initializeTurnTimer(game.id, handler);
 
     io.to(room.hostSocketId!).emit("matchFound", {
       gameId: game.id,
