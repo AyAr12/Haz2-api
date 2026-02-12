@@ -30,7 +30,7 @@ export interface IPlayer {
   hand: ICard[];
   isReady: boolean;
   username?: string; // Nom d'affichage
-  avatar?: string; // Avatar emoji
+  avatarId?: string; // Avatar emoji
   addCard(card: ICard): void;
   removeCard(cardId: string): ICard | null;
   hasCard(cardId: string): boolean;
@@ -106,7 +106,7 @@ export interface CounterDecisionRequest {
 export interface PlayerInfo {
   id: string;
   username: string;
-  avatar: string;
+  avatarId: string;
 }
 
 export interface GameState {
@@ -168,7 +168,8 @@ export interface UserProfile {
   id: string;
   visitorId: string;
   username: string;
-  avatar: string;
+  avatarId: string;
+  avatarPath: string;
   stats: UserStats;
   winRate: number;
 }
@@ -227,7 +228,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   // Auth/Profile
   authenticate: (data: { visitorId: string; username?: string }) => void;
-  updateProfile: (data: { username?: string; avatar?: string }) => void;
+  updateProfile: (data: { username?: string; avatarId?: string }) => void;
 
   // Matchmaking
   findMatch: (data: { visitorId: string }) => void;

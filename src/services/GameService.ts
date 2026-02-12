@@ -48,11 +48,11 @@ export class GameService {
     player1VisitorId: string,
     player1SocketId: string,
     player1Username: string,
-    player1Avatar: string,
+    player1AvatarId: string,
     player2VisitorId: string,
     player2SocketId: string,
     player2Username: string,
-    player2Avatar: string,
+    player2AvatarId: string,
     mode: GameMode = GameMode.RANDOM,
     privateRoomCode?: string
   ): Game {
@@ -60,13 +60,13 @@ export class GameService {
       player1VisitorId,
       player1SocketId,
       player1Username,
-      player1Avatar
+      player1AvatarId
     );
     const player2 = new Player(
       player2VisitorId,
       player2SocketId,
       player2Username,
-      player2Avatar
+      player2AvatarId
     );
 
     const game = new Game(player1, player2, mode, privateRoomCode);
@@ -204,36 +204,6 @@ export class GameService {
     };
   }
 
-  // private setTimeoutTimer(gameId: string, onTimeout: () => void): void {
-  //   this.clearTimeoutTimer(gameId);
-
-  //   const game = this.games.get(gameId);
-  //   if (!game || !game.pendingEffect?.timeoutAt) return;
-
-  //   const timeUntilTimeout = game.pendingEffect.timeoutAt - Date.now();
-  //   if (timeUntilTimeout <= 0) {
-  //     onTimeout();
-  //     return;
-  //   }
-
-  //   const timer = setTimeout(() => {
-  //     const currentGame = this.games.get(gameId);
-  //     if (currentGame && currentGame.checkAndApplyTimeout()) {
-  //       onTimeout();
-  //     }
-  //   }, timeUntilTimeout);
-
-  //   this.timeoutTimers.set(gameId, timer);
-  // }
-
-  // private clearTimeoutTimer(gameId: string): void {
-  //   const timer = this.timeoutTimers.get(gameId);
-  //   if (timer) {
-  //     clearTimeout(timer);
-  //     this.timeoutTimers.delete(gameId);
-  //   }
-  // }
-
   drawCard(
     gameId: string,
     playerId: string,
@@ -353,6 +323,9 @@ export class GameService {
     const playerIdx = game.getPlayerIndex(playerId);
     const opponent = game.players.find((p) => p.id !== playerId)!;
 
+    // console.log("📊 Récupération de l'état du jeu pour", player);
+    // console.log("Opposant:", opponent);
+
     let pendingEffectForPlayer = undefined;
     if (game.pendingEffect) {
       const counterNumber =
@@ -392,13 +365,15 @@ export class GameService {
     const youInfo: PlayerInfo = {
       id: player.id,
       username: player.username || "Vous",
-      avatar: player.avatar || "🎴",
+      // @ts-ignore
+      avatarId: player.avatar || "",
     };
 
     const opponentInfo: PlayerInfo = {
       id: opponent.id,
       username: opponent.username || "Adversaire",
-      avatar: opponent.avatar || "🃏",
+      // @ts-ignore
+      avatarId: opponent.avatar || "",
     };
 
     return {

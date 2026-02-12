@@ -1,4 +1,39 @@
-import { User, IUser, AVATARS } from "../models/User";
+import {
+  User,
+  IUser,
+  AVATARS,
+  getAvatarPath,
+  isValidAvatarId,
+  getRandomAvatar,
+} from "../models/User";
+
+// ─── Public Profile (envoyé au client) ─────────────────────────────────
+export interface UserProfile {
+  visitorId: string;
+  username: string;
+  avatarId: string; // ID de l'avatar
+  avatarPath: string; // Chemin de l'image
+  stats: {
+    matchesPlayed: number;
+    matchesWon: number;
+    roundsPlayed: number;
+    roundsWon: number;
+    winStreak: number;
+    bestWinStreak: number;
+  };
+  winRate: number;
+}
+
+// ─── Leaderboard Entry ─────────────────────────────────────────────────
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  avatarId: string;
+  avatarPath: string;
+  matchesWon: number;
+  matchesPlayed: number;
+  winRate: number;
+}
 
 export class UserService {
   private static instance: UserService;
@@ -19,15 +54,11 @@ export class UserService {
     let user = await User.findOne({ visitorId });
 
     if (!user) {
-      // Générer un username par défaut si non fourni
-      const defaultUsername =
-        username || `Joueur${Math.floor(Math.random() * 10000)}`;
-      const randomAvatar = AVATARS[Math.floor(Math.random() * AVATARS.length)];
-
+      const randomAvatar = getRandomAvatar();
       user = await User.create({
         visitorId,
-        username: defaultUsername,
-        avatar: randomAvatar,
+        username: username || this.generateUsername(),
+        avatarId: randomAvatar.id,
       });
       console.log(`👤 Nouvel utilisateur créé: ${user.username}`);
     } else {
@@ -44,26 +75,27 @@ export class UserService {
    */
   async updateProfile(
     visitorId: string,
-    updates: { username?: string; avatar?: string }
+    updates: { username?: string; avatarId?: string }
   ): Promise<IUser | null> {
-    const user = await User.findOne({ visitorId });
-    if (!user) return null;
+    const updateData: Partial<IUser> = {};
 
-    if (
-      updates.username &&
-      updates.username.length >= 2 &&
-      updates.username.length <= 20
-    ) {
-      user.username = updates.username.trim();
+    if (updates.username) {
+      // Sanitize username
+      updateData.username = updates.username.trim().slice(0, 20);
     }
 
-    if (updates.avatar && AVATARS.includes(updates.avatar)) {
-      user.avatar = updates.avatar;
+    if (updates.avatarId) {
+      // Validate avatar ID
+      if (isValidAvatarId(updates.avatarId)) {
+        updateData.avatarId = updates.avatarId;
+      }
     }
 
-    await user.save();
-    console.log(`👤 Profil mis à jour: ${user.username}`);
-    return user;
+    if (Object.keys(updateData).length === 0) {
+      return this.getUserByVisitorId(visitorId);
+    }
+
+    return User.findOneAndUpdate({ visitorId }, updateData, { new: true });
   }
 
   /**
@@ -104,36 +136,52 @@ export class UserService {
   /**
    * Récupère le leaderboard (top joueurs par victoires)
    */
-  async getLeaderboard(limit: number = 10): Promise<IUser[]> {
-    return User.find({ "stats.matchesPlayed": { $gte: 5 } })
+  async getLeaderboard(limit: number = 20): Promise<LeaderboardEntry[]> {
+    const users = await User.find({ "stats.matchesPlayed": { $gt: 0 } })
       .sort({ "stats.matchesWon": -1 })
       .limit(limit)
-      .select("username avatar stats");
-  }
+      .lean();
 
-  /**
-   * Liste des avatars disponibles
-   */
-  getAvailableAvatars(): string[] {
-    return AVATARS;
+    return users.map((user, index) => ({
+      rank: index + 1,
+      username: user.username,
+      avatarId: user.avatarId,
+      avatarPath: getAvatarPath(user.avatarId),
+      matchesWon: user.stats.matchesWon,
+      matchesPlayed: user.stats.matchesPlayed,
+      winRate:
+        user.stats.matchesPlayed > 0
+          ? Math.round((user.stats.matchesWon / user.stats.matchesPlayed) * 100)
+          : 0,
+    }));
   }
 
   /**
    * Convertit un IUser en profil public
    */
-  toPublicProfile(user: IUser): {
-    id: string;
-    username: string;
-    avatar: string;
-    stats: typeof user.stats;
-    winRate: number;
-  } {
+  toPublicProfile(user: IUser): UserProfile {
     return {
-      id: user._id.toString(),
+      visitorId: user.visitorId,
       username: user.username,
-      avatar: user.avatar,
+      avatarId: user.avatarId,
+      avatarPath: getAvatarPath(user.avatarId),
       stats: user.stats,
       winRate: user.winRate,
     };
+  }
+
+  // ─── Get Available Avatars ───────────────────────────────────────────
+  getAvailableAvatars(): typeof AVATARS {
+    return AVATARS;
+  }
+
+  // ─── Generate Random Username ────────────────────────────────────────
+  private generateUsername(): string {
+    const adjectives = ["Rapide", "Rusé", "Fort", "Malin", "Brave", "Sage"];
+    const nouns = ["Joueur", "As", "Champion", "Pro", "Expert", "Maître"];
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const num = Math.floor(Math.random() * 1000);
+    return `${adj}${noun}${num}`;
   }
 }

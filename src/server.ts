@@ -13,7 +13,7 @@ import {
 import { CardType, GameMode, GameStatus } from "./types";
 import { UserService } from "./services/UserService";
 import { PrivateRoomService } from "./services/PrivateRoomService";
-import { AVATARS } from "./models/User";
+import { AVATARS, isValidAvatarId } from "./models/User";
 import { connectDatabase } from "./config/database";
 
 const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
@@ -37,13 +37,15 @@ const matchmaking = MatchmakingService.getInstance();
 const userService = UserService.getInstance();
 const privateRoomService = PrivateRoomService.getInstance();
 
-const FRONTEND_BASE_URL =
-  process.env.FRONTEND_BASE_URL || "http://localhost:5173";
+// const FRONTEND_BASE_URL =
+//   process.env.FRONTEND_BASE_URL || "http://localhost:5173";
+const FRONTEND_BASE_URL = "http://localhost:5173";
 
 // Helpers
 function broadcastGameState(gameId: string, game: any) {
   game.players.forEach((player: any) => {
     const state = gameService.getGameState(gameId, player.id);
+
     io.to(player.socketId).emit("gameUpdate", state);
   });
 }
@@ -131,6 +133,83 @@ function createTimeoutHandler(gameId: string) {
   };
 }
 
+/**
+ * Gère le forfait d'un joueur (déconnexion ou abandon volontaire)
+ * Donne la victoire à l'adversaire
+ */
+function handlePlayerForfeit(
+  gameId: string,
+  visitorIdOrSocketId: string,
+  isSocketId: boolean = false
+) {
+  const game = gameService.getGame(gameId);
+  if (
+    !game ||
+    game.status === GameStatus.MATCH_OVER ||
+    game.status === GameStatus.ABANDONED
+  ) {
+    return null;
+  }
+
+  // Trouver le joueur qui abandonne et l'adversaire
+  let forfeitingPlayer: any;
+  let opponent: any;
+
+  if (isSocketId) {
+    forfeitingPlayer = game.players.find(
+      (p: any) => p.socketId === visitorIdOrSocketId
+    );
+  } else {
+    forfeitingPlayer = game.players.find(
+      (p: any) => p.id === visitorIdOrSocketId
+    );
+  }
+
+  if (!forfeitingPlayer) return null;
+
+  opponent = game.players.find((p: any) => p.id !== forfeitingPlayer.id);
+  if (!opponent) return null;
+
+  // Marquer le match comme abandonné et définir le gagnant
+  game.status = GameStatus.ABANDONED;
+  game.matchWinner = opponent.id;
+
+  const opponentIdx = game.players[0].id === opponent.id ? 0 : 1;
+  const forfeitingIdx = opponentIdx === 0 ? 1 : 0;
+
+  // Enregistrer le résultat
+  const totalRounds = game.scores[0] + game.scores[1] || 1;
+  userService.recordMatchResult(
+    opponent.id,
+    true,
+    game.scores[opponentIdx],
+    totalRounds
+  );
+  userService.recordMatchResult(
+    forfeitingPlayer.id,
+    false,
+    game.scores[forfeitingIdx],
+    totalRounds
+  );
+
+  // Créer le résultat du match pour l'adversaire
+  const matchResult = {
+    matchWinner: opponent.id,
+    isWinner: true,
+    finalScore: game.scores,
+    yourScore: game.scores[opponentIdx],
+    opponentScore: game.scores[forfeitingIdx],
+    reason: "opponent_disconnected" as const,
+  };
+
+  return {
+    opponent,
+    forfeitingPlayer,
+    matchResult,
+    game,
+  };
+}
+
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
   res.json({
@@ -141,7 +220,13 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 app.get("/api/avatars", (_req: Request, res: Response) =>
-  res.json({ avatars: AVATARS })
+  res.json({
+    avatars: AVATARS.map((a) => ({
+      id: a.id,
+      path: a.path,
+      name: a.name,
+    })),
+  })
 );
 
 app.get("/api/leaderboard", async (_req: Request, res: Response) => {
@@ -157,6 +242,31 @@ app.get("/api/profile/:visitorId", async (req: Request, res: Response) => {
   try {
     const user = await userService.getUserByVisitorId(req.params.visitorId);
     if (!user) return res.status(404).json({ error: "Utilisateur non trouvé" });
+    return res.json({ profile: userService.toPublicProfile(user) });
+  } catch {
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// ─── PUT /api/profile/:visitorId - Mettre à jour le profil ─────────────
+app.put("/api/profile/:visitorId", async (req, res) => {
+  try {
+    const { username, avatarId } = req.body;
+
+    // Validation
+    if (avatarId && !isValidAvatarId(avatarId)) {
+      return res.status(400).json({ error: "Avatar invalide" });
+    }
+
+    const user = await userService.updateProfile(req.params.visitorId, {
+      username,
+      avatarId,
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Utilisateur non trouvé" });
+    }
+
     return res.json({ profile: userService.toPublicProfile(user) });
   } catch {
     return res.status(500).json({ error: "Erreur serveur" });
@@ -202,11 +312,15 @@ io.on("connection", (socket) => {
 
   socket.on(
     "updateProfile",
-    async (data: { visitorId: string; username?: string; avatar?: string }) => {
+    async (data: {
+      visitorId: string;
+      username?: string;
+      avatarId?: string;
+    }) => {
       try {
         const user = await userService.updateProfile(data.visitorId, {
           username: data.username,
-          avatar: data.avatar,
+          avatarId: data.avatarId,
         });
         if (user)
           socket.emit("profileUpdated", userService.toPublicProfile(user));
@@ -228,7 +342,7 @@ io.on("connection", (socket) => {
         data.visitorId,
         socket.id,
         user.username,
-        user.avatar
+        user.avatarId
       );
       socket.emit("queueJoined", {
         message: "Recherche d'un adversaire...",
@@ -362,6 +476,29 @@ io.on("connection", (socket) => {
     else socket.emit("error", { message: result.message });
   });
 
+  // ─── Abandon volontaire (bouton Quitter) ────────────────────────────────
+  socket.on("leaveGame", (data: { gameId: string; playerId: string }) => {
+    console.log(`🚪 Joueur ${data.playerId} quitte le match ${data.gameId}`);
+
+    const result = handlePlayerForfeit(data.gameId, data.playerId, false);
+
+    if (result) {
+      const { opponent, matchResult } = result;
+
+      // Notifier l'adversaire de la victoire par forfait
+      io.to(opponent.socketId).emit("opponentDisconnected", {
+        message: "Votre adversaire a quitté la partie",
+        matchResult,
+      });
+
+      // Confirmer au joueur qui quitte
+      socket.emit("gameLeft", { message: "Vous avez quitté la partie" });
+
+      // Supprimer le match après un délai
+      setTimeout(() => gameService.removeGame(data.gameId), 5000);
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log(`🔌 Client déconnecté: ${socket.id}`);
     const playerId = gameService.getPlayerIdBySocket(socket.id);
@@ -372,17 +509,22 @@ io.on("connection", (socket) => {
     if (disconnectResult) {
       const { opponentSocketId, game, gameId, disconnectedPlayerId } =
         disconnectResult;
-      io.to(opponentSocketId).emit("opponentDisconnected", {
-        message: "Votre adversaire s'est déconnecté",
-      });
       const opponentIdx = game.players[0].id === disconnectedPlayerId ? 1 : 0;
-      io.to(opponentSocketId).emit("matchOver", {
+      const forfeitingIdx = opponentIdx === 0 ? 1 : 0;
+
+      const matchResult = {
         matchWinner: game.matchWinner,
         isWinner: true,
         finalScore: game.scores,
         yourScore: game.scores[opponentIdx],
-        opponentScore: game.scores[opponentIdx === 0 ? 1 : 0],
-        reason: "opponent_disconnected",
+        opponentScore: game.scores[forfeitingIdx],
+        reason: "opponent_disconnected" as const,
+      };
+
+      // Notifier l'adversaire avec le matchResult
+      io.to(opponentSocketId).emit("opponentDisconnected", {
+        message: "Votre adversaire s'est déconnecté",
+        matchResult,
       });
       userService.recordMatchResult(
         game.players[opponentIdx].id,
@@ -399,33 +541,44 @@ io.on("connection", (socket) => {
 
 // ─── Events ─────────────────────────────────────────────────────────
 
-matchmaking.on("matchFound", (player1: QueuedPlayer, player2: QueuedPlayer) => {
-  const game = gameService.createMatch(
-    player1.visitorId,
-    player1.socketId,
-    player1.username,
-    player1.avatar,
-    player2.visitorId,
-    player2.socketId,
-    player2.username,
-    player2.avatar,
-    GameMode.RANDOM
-  );
-  // ✅ FIX: Initialiser le timer de tour côté serveur dès le début du match
-  const handler = createTimeoutHandler(game.id);
-  gameService.initializeTurnTimer(game.id, handler);
+matchmaking.on(
+  "matchFound",
+  async (player1: QueuedPlayer, player2: QueuedPlayer) => {
+    try {
+      const user1 = await userService.getUserByVisitorId(player1.visitorId);
+      const user2 = await userService.getUserByVisitorId(player2.visitorId);
+      if (!user1 || !user2) return;
 
-  io.to(player1.socketId).emit("matchFound", {
-    gameId: game.id,
-    opponentId: player2.visitorId,
-    gameState: gameService.getGameState(game.id, player1.visitorId),
-  });
-  io.to(player2.socketId).emit("matchFound", {
-    gameId: game.id,
-    opponentId: player1.visitorId,
-    gameState: gameService.getGameState(game.id, player2.visitorId),
-  });
-});
+      const game = gameService.createMatch(
+        player1.visitorId,
+        player1.socketId,
+        user1.username,
+        user1.avatarId, // ✅ FIX
+        player2.visitorId,
+        player2.socketId,
+        user2.username,
+        user2.avatarId, // ✅ FIX
+        GameMode.RANDOM
+      );
+      // ✅ FIX: Initialiser le timer de tour côté serveur dès le début du match
+      const handler = createTimeoutHandler(game.id);
+      gameService.initializeTurnTimer(game.id, handler);
+
+      io.to(player1.socketId).emit("matchFound", {
+        gameId: game.id,
+        opponentId: player2.visitorId,
+        gameState: gameService.getGameState(game.id, player1.visitorId),
+      });
+      io.to(player2.socketId).emit("matchFound", {
+        gameId: game.id,
+        opponentId: player1.visitorId,
+        gameState: gameService.getGameState(game.id, player2.visitorId),
+      });
+    } catch (e) {
+      console.error("Erreur matchFound:", e);
+    }
+  }
+);
 
 privateRoomService.on("roomReady", async (room) => {
   try {
@@ -437,11 +590,11 @@ privateRoomService.on("roomReady", async (room) => {
       room.hostVisitorId,
       room.hostSocketId!,
       host.username,
-      host.avatar,
+      host.avatarId,
       room.guestVisitorId!,
       room.guestSocketId!,
       guest.username,
-      guest.avatar,
+      guest.avatarId,
       GameMode.PRIVATE,
       room.code
     );
