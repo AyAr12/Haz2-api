@@ -16,18 +16,18 @@ import { PrivateRoomService } from "./services/PrivateRoomService";
 import { AVATARS, isValidAvatarId } from "./models/User";
 import { connectDatabase } from "./config/database";
 
-const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
+// const allowedOrigin = process.env.FRONTEND_BASE_URL || "*";
 // const allowedOrigin = "http://localhost:5173";
 
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors({ origin: allowedOrigin }));
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigin,
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
